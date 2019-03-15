@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
+	"github.com/boltdb/bolt"
 	"log"
 	"strconv"
 	"strings"
@@ -22,7 +23,22 @@ type Block struct {
 }
 
 
-func NewBlock(data string,prevBlock *Block) *Block {
+func NewBlock(data string, blockchain *Blockchain) *Block {
+	var prevBlock *Block
+	//从数据库中获取区块链最后一个区块
+	err := blockchain.DB.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(BucketName))
+		if bucket != nil {
+			blockBytes := bucket.Get([]byte(blockchain.LastBlockHash))
+			prevBlock = DeSerializeBlock(blockBytes)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Fatal(err)
+		return nil
+	}
+
 	var block = Block{}
 	block.Height = prevBlock.Height + 1
 	block.PreHash = prevBlock.Hash
@@ -35,13 +51,12 @@ func NewBlock(data string,prevBlock *Block) *Block {
 		//更新区块的时间戳
 		block.Timestamp= time.Now().Unix()
 		blockHashStr := hex.EncodeToString(block.CalculateHash(block.Nonce))
-		fmt.Println("挖矿中 ",blockHashStr)
+		//fmt.Println("挖矿中 ",blockHashStr)
 
 		//检查hash是否满足难度
 		if IsHashValid(blockHashStr) {
 			if VerifyBlock(&block,prevBlock) {
-				fmt.Println("挖矿成功！")
-				block.Hash = []byte(blockHashStr)
+				fmt.Println(blockHashStr +"\n挖矿成功！")
 				break
 			}
 		}
@@ -53,26 +68,36 @@ func NewBlock(data string,prevBlock *Block) *Block {
 
 //计算区块的hash值
 func (b *Block)CalculateHash(nonce int64) []byte {
+
 	blockInfoStr := strconv.FormatInt(b.Height,10)+ strconv.FormatInt(b.Timestamp,10) +
 				hex.EncodeToString(b.PreHash) + hex.EncodeToString(b.Data)+ strconv.FormatInt(nonce,10)
 	h := sha256.New()
 	h.Write([]byte(blockInfoStr))
 	hashed := h.Sum(nil)
 	b.Hash = hashed
+	/*
+	height := []byte(strconv.FormatInt(b.Height,10))
+	timestamp := []byte(strconv.FormatInt(b.Timestamp,10))
+	n := []byte(strconv.FormatInt(nonce,10))
+
+	blockinfo := bytes.Join([][]byte{height,timestamp,n,b.PreHash,b.Data,b.Hash},[]byte{})
+	hash :=sha256.Sum256(blockinfo)
+	hashed := hash[:]
+	*/
 	return hashed
 }
 
 //创建创世区块
 func CreateGenesisBlock(data string)*Block {
 	genesis :=Block{1, time.Now().Unix(), nil, []byte(data),nil,0}
-	genesis.CalculateHash(0)
+	genesis.Hash = genesis.CalculateHash(0)
 	return &genesis
 }
 
 //判断hash是否有效，hash值是否满足难度
 func IsHashValid(hashStr string) bool {
-	difficutStr := strings.Repeat("0",4)
-	fmt.Printf("Difficult string is %s:",difficutStr)
+	difficutStr := strings.Repeat("0",difficuty)
+	//fmt.Printf("Difficult string is %s:",difficutStr)
 
 	if strings.HasPrefix(hashStr, difficutStr) {
 		return true
