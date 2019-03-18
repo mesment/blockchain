@@ -14,16 +14,27 @@ import (
 )
 
 type Block struct {
-	Height 		int64		//区块高度
-	Timestamp 	int64		//时间戳
-	PreHash		[]byte		//前一个区块的hash
-	Data 		[]byte		//交易数据
-	Hash 		[]byte		//区块的hash值
-	Nonce		int64 		//随机数
+	Height 		int64			//区块高度
+	Timestamp 	int64			//时间戳
+	PreHash		[]byte			//前一个区块的hash
+    Transactions []*Transaction //交易数据
+	Hash 		[]byte			//区块的hash值
+	Nonce		int64 			//随机数
 }
 
 
-func NewBlock(data string, blockchain *Blockchain) *Block {
+func (b *Block)HashTransaction() []byte {
+	var txHashes [][]byte
+
+	for _, tx := range b.Transactions {
+		txHashes = append(txHashes,tx.ID)
+	}
+	txHash := sha256.Sum256(bytes.Join(txHashes,[]byte{}))
+	return txHash[:]
+
+}
+
+func NewBlock(txs []*Transaction, blockchain *Blockchain) *Block {
 	var prevBlock *Block
 	//从数据库中获取区块链最后一个区块
 	err := blockchain.DB.View(func(tx *bolt.Tx) error {
@@ -42,7 +53,7 @@ func NewBlock(data string, blockchain *Blockchain) *Block {
 	var block = Block{}
 	block.Height = prevBlock.Height + 1
 	block.PreHash = prevBlock.Hash
-	block.Data = []byte(data)
+	block.Transactions = txs
 	block.Nonce = 0
 
 	//挖矿，通过工作量证明计算Nonce和hash值
@@ -70,7 +81,7 @@ func NewBlock(data string, blockchain *Blockchain) *Block {
 func (b *Block)CalculateHash(nonce int64) []byte {
 
 	blockInfoStr := strconv.FormatInt(b.Height,10)+ strconv.FormatInt(b.Timestamp,10) +
-				hex.EncodeToString(b.PreHash) + hex.EncodeToString(b.Data)+ strconv.FormatInt(nonce,10)
+				hex.EncodeToString(b.PreHash) + hex.EncodeToString(b.HashTransaction())+ strconv.FormatInt(nonce,10)
 	h := sha256.New()
 	h.Write([]byte(blockInfoStr))
 	hashed := h.Sum(nil)
@@ -88,8 +99,8 @@ func (b *Block)CalculateHash(nonce int64) []byte {
 }
 
 //创建创世区块
-func CreateGenesisBlock(data string)*Block {
-	genesis :=Block{1, time.Now().Unix(), nil, []byte(data),nil,0}
+func CreateGenesisBlock(txs []*Transaction)*Block {
+	genesis :=Block{1, time.Now().Unix(), nil, txs,nil,0}
 	genesis.Hash = genesis.CalculateHash(0)
 	return &genesis
 }

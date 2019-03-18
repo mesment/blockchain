@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 )
 
 type CLI struct {
@@ -19,19 +18,37 @@ func (cli *CLI) createBlockchainWithGenesisBlock(data string) {
 func (cli *CLI) Run(){
 	cli.checkArgs();
 
-	addBlockCmd := flag.NewFlagSet("addblock",flag.ExitOnError)
+	createBlockchainCmd := flag.NewFlagSet("createblockchain",flag.ExitOnError)
 	printBlockchainCmd := flag.NewFlagSet("printblockchain", flag.ExitOnError)
+	sendBlockCmd := flag.NewFlagSet("send", flag.ExitOnError)
+	getBalanceCmd := flag.NewFlagSet("getbalance",flag.ExitOnError)
 
-	addBlockData := addBlockCmd.String("data","","交易数据")
+	addressData := createBlockchainCmd.String("address","","创建创世区块地址")
+	sendBlockFrom := sendBlockCmd.String("from","","比特币发送者")
+	sendBlockTo := sendBlockCmd.String("to","","比特币接收者")
+	//sendBlockAmount := sendBlockCmd.String("amt","","发送金额")
+	sendBlockAmount := sendBlockCmd.Int("amt",0,"发送金额")
+	getBalanceAddressData := getBalanceCmd.String("address","","地址")
 
 	switch os.Args[1] {
-	case "addblock":
-		err := addBlockCmd.Parse(os.Args[2:])
+
+	case "printblockchain":
+		err := printBlockchainCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Panic(err)
 		}
-	case "printblockchain":
-		err := printBlockchainCmd.Parse(os.Args[2:])
+	case "createblockchain":
+		err := createBlockchainCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
+	case "send":
+		err := sendBlockCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
+	case "getbalance":
+		err := getBalanceCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Panic(err)
 		}
@@ -39,12 +56,32 @@ func (cli *CLI) Run(){
 		cli.printUsage()
 		os.Exit(1)
 	}
-	if addBlockCmd.Parsed() {
-		if *addBlockData == "" {
-			addBlockCmd.Usage()
+
+	if createBlockchainCmd.Parsed() {
+		if *addressData == "" {
+			cli.printUsage()
 			os.Exit(1)
 		}
-		cli.addBlock(*addBlockData)
+		cli.createBlockchain(*addressData)
+	}
+	if getBalanceCmd.Parsed() {
+		if *getBalanceAddressData == ""  {
+			cli.printUsage()
+			os.Exit(1)
+		}
+		fmt.Printf("address:%s\n",*getBalanceAddressData)
+		cli.getBalance(*getBalanceAddressData)
+	}
+	if sendBlockCmd.Parsed() {
+		if *sendBlockFrom== "" || *sendBlockTo == "" || *sendBlockAmount == 0 {
+			cli.printUsage()
+			os.Exit(1)
+		}
+		fmt.Printf("from:%s\n",*sendBlockFrom)
+		fmt.Printf("to:%s\n",*sendBlockTo)
+		fmt.Printf("amt:%d\n",*sendBlockAmount)
+
+		cli.send(*sendBlockFrom, *sendBlockTo,*sendBlockAmount)
 	}
 	if printBlockchainCmd.Parsed() {
 		cli.printBlockchain()
@@ -52,16 +89,52 @@ func (cli *CLI) Run(){
 
 }
 
-func (cli *CLI)printBlockchain(){
-	iterator := cli.BC.Iterator()
+// 判断数据库是否存在
+func DBExist()bool {
+	if _,err :=os.Stat(DbName);os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
 
+
+func (cli *CLI)send(from string, to string, amt int){
+	if !DBExist() {
+		fmt.Printf("数据库不存在")
+		os.Exit(1)
+	}
+	blockchain := GetBlockchain()
+	defer blockchain.DB.Close()
+	blockchain.MineNewBlock(from, to, amt)
+
+}
+
+func (cli *CLI)getBalance(address string) float64 {
+	var balance  float64
+
+	bc := GetBlockchain()
+	defer bc.DB.Close()
+
+	balance = bc.getBalance(address)
+	return balance
+}
+
+func (cli *CLI)printBlockchain(){
+	if !DBExist() {
+		fmt.Printf("数据库不存在")
+		os.Exit(1)
+	}
+	blockchain := GetBlockchain()
+	defer blockchain.DB.Close()
+	blockchain.PrintBlockchain()
+/*
 	for {
 		block := iterator.Next()
 		fmt.Printf("-------------------------------------Block Info Begin----------------------------------------\n")
 		fmt.Printf("block height: %d\n", block.Height)
 		fmt.Printf("block Timestamp: %s\n", time.Unix(block.Timestamp, 0).Format("2006-01-02 03:04:05 PM"))
 		fmt.Printf("block PreHash: %x\n", block.PreHash)
-		fmt.Printf("block Data: %s\n", block.Data)
+		fmt.Printf("block Data: %v\n", block.Transactions)
 		fmt.Printf("block Hash: %x\n", block.Hash)
 		fmt.Printf("block Nonce: %d\n", block.Nonce)
 		fmt.Printf("-------------------------------------Block Info End------------------------------------------\n")
@@ -70,16 +143,20 @@ func (cli *CLI)printBlockchain(){
 			break
 		}
 	}
+*/
 }
 
 func (cli *CLI)printUsage(){
 	fmt.Println("Usage:")
-	fmt.Printf("./appname addblock -data \"交易数据\" -添加一个新的区块到区块链\n")
-	fmt.Printf("./appname printblockchain -打印区块链的所有区块信息\n")
+	fmt.Printf(" createblockchain -adderss \"交易数据\" \n")
+	fmt.Printf(" printblockchain -打印区块链的所有区块信息\n")
+	fmt.Printf(" send -from -to -amt  -从发送者给接受者转amt个比特币\n")
+	fmt.Printf(" getbalance -address   -获取指定地址的比特币余额\n")
 }
 
-func (cli * CLI)addBlock(data string) {
-	cli.BC.AddBlockToBlockchain(data)
+func (cli * CLI)createBlockchain(data string) {
+	cli.BC = CreateBlockchainWithGenesisBlock(data)
+	fmt.Println("blcockinfo :%v",cli.BC)
 }
 
 func(cli *CLI)checkArgs(){
